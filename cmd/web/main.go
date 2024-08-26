@@ -7,12 +7,13 @@ import (
 	"time"
 
 	"github.com/alexedwards/scs/v2"
-	"github.com/osisupermoses/bookings/pkg/config"
-	"github.com/osisupermoses/bookings/pkg/handlers"
-	"github.com/osisupermoses/bookings/pkg/render"
+	"github.com/osisupermoses/bookings/internal/config"
+	"github.com/osisupermoses/bookings/internal/handlers"
+	"github.com/osisupermoses/bookings/internal/render"
 )
 
 const portNumber = ":8080"
+
 var app config.AppConfig
 var session *scs.SessionManager
 
@@ -26,7 +27,7 @@ func main() {
 	session.Cookie.Persist = true
 	session.Cookie.SameSite = http.SameSiteLaxMode
 	session.Cookie.Secure = app.InProduction
-	
+
 	app.Session = session
 
 	tc, err := render.CreateTemplateCache()
@@ -44,12 +45,12 @@ func main() {
 	fmt.Printf("Starting application on port %s\n", portNumber)
 
 	srv := &http.Server{
-		Addr: portNumber,
+		Addr:    portNumber,
 		Handler: routes(&app),
 	}
 
 	err = srv.ListenAndServe()
-	if err!=nil {
+	if err != nil {
 		log.Fatal(err)
 	}
 }

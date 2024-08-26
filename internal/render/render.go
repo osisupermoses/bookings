@@ -7,13 +7,13 @@ import (
 	"log"
 	"path/filepath"
 
-	// "log"
 	"net/http"
 
-	"github.com/osisupermoses/bookings/pkg/config"
-	"github.com/osisupermoses/bookings/pkg/models"
-)
+	"github.com/osisupermoses/bookings/internal/config"
+	"github.com/osisupermoses/bookings/internal/models"
 
+	"github.com/justinas/nosurf"
+)
 
 var app *config.AppConfig
 
@@ -22,23 +22,24 @@ func NewTemplates(a *config.AppConfig) {
 	app = a
 }
 
-func AddDefaultData(td *models.TemplateData) *models.TemplateData {
-
+func AddDefaultData(td *models.TemplateData, r *http.Request) *models.TemplateData {
+	td.CSRFToken = nosurf.Token(r)
 	return td
 }
 
 // RenderTemplate renders template
-func RenderTemplate(w http.ResponseWriter, tmpl string, td *models.TemplateData) {
+func RenderTemplate(w http.ResponseWriter, r *http.Request, tmpl string, td *models.TemplateData) {
 	var tc map[string]*template.Template
 
 	if app.UseCache {
 		// get the template cache from the app config
 		tc = app.TemplateCache
 	} else {
+		// this is just used for testing, so that we rebuild
+		// the cache on every request
 		tc, _ = CreateTemplateCache()
 	}
-	
-	// get requested template from cache
+
 	t, ok := tc[tmpl]
 	if !ok {
 		log.Fatal("Could not get template from template cache")
@@ -46,20 +47,15 @@ func RenderTemplate(w http.ResponseWriter, tmpl string, td *models.TemplateData)
 
 	buf := new(bytes.Buffer)
 
-	td = AddDefaultData(td)
+	td = AddDefaultData(td, r)
 
-	err := t.Execute(buf, td)
-	if err != nil {
-		log.Println(err)
-	} 
+	_ = t.Execute(buf, td)
 
-	// render the template
-	_, err = buf.WriteTo(w)
+	_, err := buf.WriteTo(w)
 	if err != nil {
-		log.Println(err)
+		fmt.Println("error writing template to browser", err)
 	}
 }
-
 
 func CreateTemplateCache() (map[string]*template.Template, error) {
 	myCache := map[string]*template.Template{}
@@ -95,6 +91,8 @@ func CreateTemplateCache() (map[string]*template.Template, error) {
 
 	return myCache, nil
 }
+
+
 
 // alternative way to what we have above
 
