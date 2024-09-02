@@ -1,1 +1,8 @@
 .vscode
+coverage.out
+bookings
+run.sh
+run.bat
+.ps_store
+*.code-workspace
+database.yml
