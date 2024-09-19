@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/gob"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/alexedwards/scs/v2"
 	"github.com/osisupermoses/bookings/internal/config"
+	"github.com/osisupermoses/bookings/internal/driver"
 	"github.com/osisupermoses/bookings/internal/handlers"
 	"github.com/osisupermoses/bookings/internal/helpers"
 	"github.com/osisupermoses/bookings/internal/models"
@@ -25,10 +27,16 @@ var errorLog *log.Logger
 
 // main is the main application function, the application's entry point
 func main() {
-	err := run()
+	db, err := run()
 	if err != nil {
 		log.Fatal(nil)
 	}
+	defer db.SQL.Close()
+
+	defer close(app.MailChan) // closes email channel
+
+	fmt.Println("Starting mail listener...")
+	listenForMail()
 
 	fmt.Printf("Starting application on port %s\n", portNumber)
 
@@ -43,12 +51,39 @@ func main() {
 	}
 }
 
-func run() error {
-	// what am I going to put in the session. Here it regsiter `models.Reservation` into the session
+func run() (*driver.DB, error) {
+	// what am I going to put in the session - all models the session will contain
 	gob.Register(models.Reservation{})
+	gob.Register(models.User{})
+	gob.Register(models.Room{})
+	gob.Register(models.Restriction{})
+	gob.Register(map[string]int{})
+
+	// read flags
+	inProduction := flag.Bool("production", true, "Application is in production")
+	useCache := flag.Bool("cache", true, "Use template cache")
+	dbName := flag.String("dbname", "", "Database name")
+	dbHost := flag.String("dbhost", "localhost", "Dabase host")
+	dbUser := flag.String("dbuser", "", "Database user")
+	dbPass := flag.String("dbpass", "", "Database password")
+	dbPort := flag.String("dbport", "5432", "Database port")
+	dbSSL := flag.String("dbssl", "disable", "Database ssl settings (disable, prefer, require)")
+
+	flag.Parse()
+
+	if *dbName == "" || *dbUser == "" {
+		fmt.Println("Missing required flag")
+		os.Exit(1)
+	}
+
+	mailChan := make(chan models.MailData)
+	app.MailChan = mailChan
 
 	// change this to true when in production
-	app.InProduction = false
+	app.InProduction = *inProduction
+	app.UseCache = *useCache
+
+
 
 	infoLog = log.New(os.Stdout, "INFO\t", log.Ldate|log.Ltime)
 	app.InfoLog = infoLog
@@ -64,19 +99,27 @@ func run() error {
 
 	app.Session = session
 
+	// connect to database
+	log.Println("Connecting to database...")
+	connectionString := fmt.Sprintf("host=%s port=%s dbname=%s user=%s password=%s sslmode=%s", *dbHost, *dbPort, *dbName, *dbUser, *dbPass, *dbSSL)
+	db, err := driver.ConnectSQL(connectionString)
+	if err != nil {
+		log.Fatal("Cannot connect to database! Dying...")
+	}
+	log.Println("Conneced to database!")
+
 	tc, err := render.CreateTemplateCache()
 	if err != nil {
 		log.Fatal("cannot create template cache")
-		return err
+		return nil, err
 	}
 
 	app.TemplateCache = tc
-	app.UseCache = false
 
-	repo := handlers.NewRepo(&app)
+	repo := handlers.NewRepo(&app, db)
 	handlers.NewHandlers(repo)
-	render.NewTemplates(&app)
+	render.NewRenderer(&app)
 	helpers.NewHelpers(&app)
 
-	return nil
+	return db, nil
 }
